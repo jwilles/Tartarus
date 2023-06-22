@@ -30,10 +30,6 @@ def get_properties(smile, verbose=False, scratch: str='/tmp'):
         scratch: `str` temporary directory
 
     Returns:
-        dipm: `float` dipole moment
-        gap: `float` homo lumo gap
-        lumo: `float` lumo energy
-        combined: `float` combined objective (HL_gap - LUMO + dipole moment)
         pce_pcbm_sas: `float` PCE PCBM minus SAS
         pce_pcdtbt_sas: `float` PCE PCDTBT minus SAS
     '''
@@ -141,13 +137,10 @@ def get_properties(smile, verbose=False, scratch: str='/tmp'):
     tmp_dir.cleanup()
 
     # assign values
-    dipm = mol_dipole_val
-    gap = homo_lumo_val
-    lumo = lumo_val
     pce_pcbm_sas = pce_1 - sas
     pce_pcdtbt_sas = pce_2 - sas
 
-    return dipm, gap, lumo, combined, pce_pcbm_sas, pce_pcdtbt_sas
+    return pce_pcbm_sas, pce_pcdtbt_sas
 
 
 def get_fingerprint(smile, nBits, ecfp_degree=2):
@@ -159,89 +152,11 @@ def get_fingerprint(smile, nBits, ecfp_degree=2):
     return x
 
 
-class SurrogateModel(object):
-    def __init__(self, model_list_dir, use_ensemble=False):
-        super(SurrogateModel, self).__init__()
-        self.use_ensemble = use_ensemble
-        self.device = torch.device('cpu')
-        model_state_dicts = os.listdir(model_list_dir)
-        self.model_list = []
-        for model_state_dict in model_state_dicts:
-            self.model_list.append(torch.load(os.path.join(model_list_dir, model_state_dict), map_location=self.device))
-            # print(torch.load(os.path.join(model_list_dir, model_state_dict)))
-            if use_ensemble is False:
-                break
-
-    def forward(self, x):
-        if type(x) == str:
-            x = get_fingerprint(smile=x, nBits=2048, ecfp_degree=2)
-            
-        # x = torch.tensor(x).to('cuda:0', dtype=torch.float32)
-        x = torch.tensor(x).to(self.device, dtype=torch.float32)
-        predictions = []
-        for model in self.model_list:
-            predictions.append(model(x).detach().cpu().numpy())
-
-        predictions = np.array(predictions)
-
-        mean = np.mean(predictions, axis=0)
-        var = np.var(predictions, axis=0)
-
-        if self.use_ensemble:
-            return mean, var
-        else:
-            return mean
-
-        
-def get_surrogate_properties(smiles):
-    ''' Return surrogate fitness functions for the design of OPV molecules.
-    Load surrogate models trained on dataset and make predictions of material
-    properties. 
-
-    Args:
-        smile: `str` representing molecule
-
-    Returns:
-        dipm: `float` dipole moment
-        gap: `float` homo lumo gap
-        lumo: `float` lumo energy
-        combined: `float` combined objective (HL_gap - LUMO + dipole moment)
-    '''
-
-    path = os.path.join(os.path.dirname(inspect.getfile(get_fingerprint)), 'pce_pretrained_models')
-    try: 
-        surrogate_model_homo_lumo = SurrogateModel(f'{path}/homo_lumo')
-        surrogate_model_lumo_val = SurrogateModel(f'{path}/lumo_val')
-        surrogate_model_dipole = SurrogateModel(f'{path}/dipole')
-        surrogate_model_function = SurrogateModel(f'{path}/function')
-        
-        with torch.no_grad():
-            gap = surrogate_model_homo_lumo.forward(smiles) 
-            lumo = surrogate_model_lumo_val.forward(smiles)
-            dipm = surrogate_model_dipole.forward(smiles)
-            combined = surrogate_model_function.forward(smiles)
-    
-        return float(dipm), float(gap), float(lumo), float(combined)
-    
-    except: 
-        return float(-10**4), float(-10**4), float(10**4), float(-10**4)
-
 if __name__ == '__main__':
     # calculate fitness values
     smi = 'c1ccccc1'
-    dipm, gap, lumo, combined, pce_pcbm_sas, pce_pcdtbt_sas = get_properties(smi)
-    print(f'Dipole moment: {dipm}')
-    print(f'HOMO-LUMO Gap: {gap}')
-    print(f'LUMO: {lumo}')
-    print(f'Combined obj: {combined}')
+    pce_pcbm_sas, pce_pcdtbt_sas = get_properties(smi)
     print(f'PCE_PCBM - SAS: {pce_pcbm_sas}')
     print(f'PCE_PCDTBT - SAS: {pce_pcdtbt_sas}')
-
-    # calculating using surrogate model
-    dipm, gap, lumo, combined = get_surrogate_properties(smi)
-    print(f'Dipole moment: {dipm}')
-    print(f'HOMO-LUMO Gap: {gap}')
-    print(f'LUMO: {lumo}')
-    print(f'Combined obj: {combined}')
 
 
