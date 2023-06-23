@@ -4,6 +4,15 @@ from .utils import suppress_output, run_command
 import tempfile
 from pathlib import Path
 
+import sys
+import os 
+from rdkit import RDLogger
+from rdkit.Chem import RDConfig
+sys.path.append(os.path.join(RDConfig.RDContribDir, 'SA_Score'))
+import sascorer
+RDLogger.DisableLog('rdApp.*')
+
+
 from rdkit import rdBase
 rdBase.DisableLog('rdApp.error')
 
@@ -274,9 +283,33 @@ class computation:
             self.oscillator_strength = self.oscillator_strength_singlets[0]
             self.results = np.array([self.fluorescence_energy, self.singlet_triplet_gap, self.oscillator_strength])
         return
-    
+
+
+def calc_sa_score(smiles):
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return -10**4
+    sa_score = sascorer.calculateScore(mol)
+
+    return sa_score
 
 def get_properties(smi: str, verbose: bool=False, scratch='/tmp'): 
+    """
+    Get fluorescence properties from SMILES string.
+    
+    :param smi: `str` SMILES string
+    :param verbose: `bool` Print output to screen
+    :param scratch: `str` Scratch directory
+
+    :returns: 
+        - st: `float` Singlet-triplet gap
+        - osc: `float` Oscillator strength 
+        - combined: `float` Combined fluorescence energy
+    """
+
+    if calc_sa_score(smi) > 4.5:
+        return -10**4
+        
     # Create and switch to temporary directory
     owd = Path.cwd()
     scratch_path = Path(scratch)
@@ -318,5 +351,3 @@ if __name__ == '__main__':
     print(f'Singlet-triplet: {st}')
     print(f'Oscillator strength: {osc}')
     print(f'Combined obj: {combined}')
-
-
